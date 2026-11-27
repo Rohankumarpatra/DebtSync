@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun cfg(envKey: String, propKey: String): String? =
+    System.getenv(envKey)?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.rohan.debtsync"
@@ -12,13 +23,37 @@ android {
         applicationId = "com.rohan.debtsync.clean"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "2.1"
+    }
+
+    val releaseStoreFile = cfg("ANDROID_KEYSTORE_PATH", "release.storeFile")
+    val releaseStorePassword = cfg("KEYSTORE_PASSWORD", "release.storePassword")
+    val releaseKeyAlias = cfg("KEY_ALIAS", "release.keyAlias")
+    val releaseKeyPassword = cfg("KEY_PASSWORD", "release.keyPassword")
+    val hasReleaseSigning = releaseStoreFile != null &&
+        file(releaseStoreFile).exists() &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -37,6 +72,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -33,6 +33,7 @@ import com.rohan.debtsync.model.CurrencyMode
 import com.rohan.debtsync.model.formatMoney
 import com.rohan.debtsync.reminder.DueEmiReminder
 import com.rohan.debtsync.ui.theme.LocalDebtPalette
+import com.rohan.debtsync.update.AppUpdateInfo
 
 @Composable
 fun EmiReminderPopupDialog(
@@ -209,6 +210,53 @@ fun SecurityAndReminderDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+fun UpdateAvailableDialog(
+    update: AppUpdateInfo,
+    currentVersion: String,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalDebtPalette.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Update Available (${update.latestVersion})", fontWeight = FontWeight.Bold)
+                Text("Current version: v$currentVersion", fontSize = 12.sp, color = palette.textSecondary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    update.releaseNotes,
+                    fontSize = 13.sp,
+                    color = palette.textPrimary
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDownload,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent)
+            ) {
+                Text("Download Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Later")
             }
         }
     )

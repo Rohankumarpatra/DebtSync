@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.rohan.debtsync.BuildConfig
 import com.rohan.debtsync.data.DebtRepository
 import com.rohan.debtsync.model.CurrencyMode
 import com.rohan.debtsync.model.DebtCatalog
@@ -17,6 +19,9 @@ import com.rohan.debtsync.model.SimStrategy
 import com.rohan.debtsync.reminder.DueEmiReminder
 import com.rohan.debtsync.reminder.EmiReminderManager
 import com.rohan.debtsync.security.TotpManager
+import com.rohan.debtsync.update.AppUpdateInfo
+import com.rohan.debtsync.update.UpdateChecker
+import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 
@@ -66,6 +71,11 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
 
     var showReminderPopup by mutableStateOf(false)
         private set
+
+    var availableUpdate by mutableStateOf<AppUpdateInfo?>(null)
+        private set
+
+    private var hasAutoCheckedUpdate = false
 
     var focusMonthKey by mutableStateOf(findInitialFocusMonth(loans))
     var simExtraBudget by mutableDoubleStateOf(2000.0)
@@ -143,6 +153,31 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         isUnlocked = true
         refreshReminders(openPopupIfDue = true)
         EmiReminderManager.scheduleDailyReminder(getApplication())
+        checkForUpdates(manual = false)
+    }
+
+    fun checkForUpdates(manual: Boolean = false) {
+        if (!manual && hasAutoCheckedUpdate) return
+        hasAutoCheckedUpdate = true
+        viewModelScope.launch {
+            UpdateChecker.checkForUpdate()
+                .onSuccess { info ->
+                    if (info != null) {
+                        availableUpdate = info
+                    } else if (manual) {
+                        statusMessage = "You're on the latest version (v${BuildConfig.VERSION_NAME})"
+                    }
+                }
+                .onFailure {
+                    if (manual) {
+                        statusMessage = "Couldn't check for updates right now"
+                    }
+                }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        availableUpdate = null
     }
 
     fun refreshReminders(openPopupIfDue: Boolean = false) {

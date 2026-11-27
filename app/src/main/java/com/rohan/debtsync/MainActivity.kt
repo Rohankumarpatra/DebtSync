@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -80,6 +81,7 @@ import com.rohan.debtsync.ui.MatrixScreen
 import com.rohan.debtsync.ui.OverviewScreen
 import com.rohan.debtsync.ui.SecurityAndReminderDialog
 import com.rohan.debtsync.ui.SimulatorScreen
+import com.rohan.debtsync.ui.UpdateAvailableDialog
 import com.rohan.debtsync.ui.theme.DebtSyncTheme
 import com.rohan.debtsync.ui.theme.GeminiBackground
 import com.rohan.debtsync.ui.theme.LocalDebtPalette
@@ -241,6 +243,13 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Check for Updates") },
+                                onClick = {
+                                    menuExpanded = false
+                                    vm.checkForUpdates(manual = true)
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Export CSV") },
                                 onClick = {
                                     menuExpanded = false
@@ -346,6 +355,22 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
             leadDays = vm.reminderLeadDays,
             onMarkPaid = { loanId, monthKey -> vm.togglePayment(loanId, monthKey) },
             onDismiss = { vm.dismissReminderPopup() }
+        )
+    }
+
+    vm.availableUpdate?.let { update ->
+        UpdateAvailableDialog(
+            update = update,
+            currentVersion = BuildConfig.VERSION_NAME,
+            onDownload = {
+                vm.dismissUpdateDialog()
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl)))
+                } catch (_: Exception) {
+                    // Ignored if no browser installed
+                }
+            },
+            onDismiss = { vm.dismissUpdateDialog() }
         )
     }
 

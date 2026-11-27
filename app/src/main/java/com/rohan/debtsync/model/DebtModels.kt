@@ -66,35 +66,64 @@ data class LoanAccount(
 }
 
 object DebtCatalog {
-    val MONTHS: List<MonthSlot> by lazy { buildRollingMonths(count = 15) }
+    val MONTHS: List<MonthSlot> by lazy { buildMonthsFromKey(currentMonthKey(), count = 12) }
 
     fun initialLoans(): List<LoanAccount> = emptyList()
 
-    fun allMonthsFor(loans: List<LoanAccount>): List<MonthSlot> {
-        val known = MONTHS.associateBy { it.key }.toMutableMap()
-        loans.forEach { loan ->
-            loan.payments.keys.forEach { key ->
-                if (key !in known) {
-                    known[key] = slotFromKey(key)
-                }
+    fun currentMonthKey(): String {
+        val cal = Calendar.getInstance()
+        return SimpleDateFormat("yyyy-MM", Locale.US).format(cal.time)
+    }
+
+    fun offsetMonthKey(baseKey: String, offsetMonths: Int): String {
+        val cal = parseMonthKey(baseKey) ?: Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
+        cal.add(Calendar.MONTH, offsetMonths)
+        return SimpleDateFormat("yyyy-MM", Locale.US).format(cal.time)
+    }
+
+    fun buildMonthsFromKey(startKey: String, count: Int): List<MonthSlot> {
+        val safeCount = count.coerceIn(1, 360)
+        val cal = parseMonthKey(startKey) ?: Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val keyFmt = SimpleDateFormat("yyyy-MM", Locale.US)
+        val labelFmt = SimpleDateFormat("MMM yyyy", Locale.US)
+        val shortFmt = SimpleDateFormat("MMM", Locale.US)
+        val curYear = Calendar.getInstance().get(Calendar.YEAR)
+
+        return (0 until safeCount).map {
+            val key = keyFmt.format(cal.time)
+            val label = labelFmt.format(cal.time)
+            val yr = cal.get(Calendar.YEAR)
+            val short = if (yr != curYear) {
+                "${shortFmt.format(cal.time)} '${(yr % 100).toString().padStart(2, '0')}"
+            } else {
+                shortFmt.format(cal.time)
             }
+            cal.add(Calendar.MONTH, 1)
+            MonthSlot(key = key, label = label, shortLabel = short)
         }
-        return known.values.sortedBy { it.key }
+    }
+
+    fun allMonthsFor(loans: List<LoanAccount>): List<MonthSlot> {
+        val nowKey = currentMonthKey()
+        val allKeys = loans.flatMap { loan ->
+            loan.payments.filterValues { it.amount > 0 }.keys
+        }
+        if (allKeys.isEmpty()) {
+            return buildMonthsFromKey(nowKey, 12)
+        }
+        val minKey = minOf(nowKey, allKeys.min())
+        val maxKey = maxOf(offsetMonthKey(nowKey, 11), allKeys.max())
+        val totalSpan = monthsBetweenInclusive(minKey, maxKey).coerceIn(1, 360)
+        return buildMonthsFromKey(minKey, totalSpan)
     }
 
     fun slotFromKey(key: String): MonthSlot {
-        val parts = key.split("-")
-        val year = parts.getOrNull(0)?.toIntOrNull()
-        val month = parts.getOrNull(1)?.toIntOrNull()
-        if (year != null && month != null && month in 1..12) {
-            val cal = Calendar.getInstance().apply {
-                set(Calendar.DAY_OF_MONTH, 1)
-                set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month - 1)
-            }
+        val cal = parseMonthKey(key)
+        if (cal != null) {
+            val year = cal.get(Calendar.YEAR)
+            val curYear = Calendar.getInstance().get(Calendar.YEAR)
             val labelFmt = SimpleDateFormat("MMM yyyy", Locale.US)
             val shortFmt = SimpleDateFormat("MMM", Locale.US)
-            val curYear = Calendar.getInstance().get(Calendar.YEAR)
             val shortStr = if (year != curYear) {
                 "${shortFmt.format(cal.time)} '${(year % 100).toString().padStart(2, '0')}"
             } else {
@@ -105,27 +134,28 @@ object DebtCatalog {
         return MonthSlot(key, key, key)
     }
 
-    private fun buildRollingMonths(count: Int): List<MonthSlot> {
-        val cal = Calendar.getInstance().apply {
+    private fun parseMonthKey(key: String): Calendar? {
+        val parts = key.split("-")
+        val year = parts.getOrNull(0)?.toIntOrNull() ?: return null
+        val month = parts.getOrNull(1)?.toIntOrNull() ?: return null
+        if (month !in 1..12) return null
+        return Calendar.getInstance().apply {
             set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
-        val keyFmt = SimpleDateFormat("yyyy-MM", Locale.US)
-        val labelFmt = SimpleDateFormat("MMM yyyy", Locale.US)
-        val shortFmt = SimpleDateFormat("MMM", Locale.US)
-        val startYear = cal.get(Calendar.YEAR)
+    }
 
-        return (0 until count).map {
-            val key = keyFmt.format(cal.time)
-            val label = labelFmt.format(cal.time)
-            val yr = cal.get(Calendar.YEAR)
-            val short = if (yr != startYear) {
-                "${shortFmt.format(cal.time)} '${(yr % 100).toString().padStart(2, '0')}"
-            } else {
-                shortFmt.format(cal.time)
-            }
-            cal.add(Calendar.MONTH, 1)
-            MonthSlot(key = key, label = label, shortLabel = short)
-        }
+    private fun monthsBetweenInclusive(startKey: String, endKey: String): Int {
+        val start = parseMonthKey(startKey) ?: return 12
+        val end = parseMonthKey(endKey) ?: return 12
+        val yDiff = end.get(Calendar.YEAR) - start.get(Calendar.YEAR)
+        val mDiff = end.get(Calendar.MONTH) - start.get(Calendar.MONTH)
+        return (yDiff * 12 + mDiff + 1).coerceAtLeast(1)
     }
 }
 

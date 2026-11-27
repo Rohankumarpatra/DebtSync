@@ -87,7 +87,6 @@ class DebtRepository(context: Context) {
         prefs.edit().putBoolean("dark_theme", isDark).apply()
     }
 
-    // Authenticator Sync Storage (Keystore-encrypted TOTP secret + SHA-256 recovery hash)
     fun isAuthConfigured(): Boolean = !prefs.getString("totp_secret_enc", null).isNullOrBlank()
 
     fun saveAuthConfig(secretBase32: String, recoveryCode: String) {
@@ -111,7 +110,6 @@ class DebtRepository(context: Context) {
         return TotpManager.constantTimeEquals(storedHash, TotpManager.sha256(normalized))
     }
 
-    // EMI Reminder Settings
     fun isReminderEnabled(): Boolean = prefs.getBoolean("emi_reminder_enabled", true)
 
     fun setReminderEnabled(enabled: Boolean) {
@@ -122,44 +120,5 @@ class DebtRepository(context: Context) {
 
     fun setReminderLeadDays(days: Int) {
         prefs.edit().putInt("emi_reminder_lead_days", days.coerceIn(1, 14)).apply()
-    }
-
-    fun exportCsv(loans: List<LoanAccount>): String {
-        val months = DebtCatalog.allMonthsFor(loans)
-        val sb = StringBuilder()
-        val headers = mutableListOf("Platform", "Due Day")
-        months.forEach { m ->
-            headers.add(m.label)
-            headers.add("${m.shortLabel} Status")
-        }
-        headers.addAll(listOf("Amount Left", "Total Paid", "Total EMIs Left", "Status"))
-        sb.appendLine(headers.joinToString(","))
-
-        loans.forEach { loan ->
-            val escapedPlatform = "\"${loan.platform.replace("\"", "\"\"")}\""
-            val row = mutableListOf(escapedPlatform, loan.dueDay?.toString() ?: "-")
-            months.forEach { m ->
-                val p = loan.payments[m.key]
-                if (p != null && p.amount > 0) {
-                    row.add(p.amount.toString())
-                    row.add(if (p.status == PaymentStatus.PAID) "Paid" else "Upcoming")
-                } else {
-                    row.add("0")
-                    row.add("-")
-                }
-            }
-            row.add(loan.amountLeft.toString())
-            row.add(loan.totalPaid.toString())
-            row.add(loan.emisLeft.toString())
-            row.add(
-                when {
-                    !loan.hasSchedule -> "No EMIs"
-                    loan.isSettled -> "Settled"
-                    else -> "Pending"
-                }
-            )
-            sb.appendLine(row.joinToString(","))
-        }
-        return sb.toString()
     }
 }

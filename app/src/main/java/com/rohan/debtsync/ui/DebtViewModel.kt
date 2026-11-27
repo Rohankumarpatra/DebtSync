@@ -335,8 +335,6 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         statusMessage = "Cleared all loan accounts"
     }
 
-    fun buildExportCsv(): String = repo.exportCsv(loans)
-
     fun clearStatusMessage() {
         statusMessage = null
     }
@@ -384,7 +382,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         var monthIdx = firstUpcomingIdx
-        val maxEndIdx = firstUpcomingIdx + 36
+        val maxEndIdx = maxOf(allMonths.size + 60, firstUpcomingIdx + 360)
         while (working.any { it.balance > 0.01 } && monthIdx < maxEndIdx) {
             val mKey = allMonths.getOrNull(monthIdx)?.key
             working.forEach { acc ->
@@ -424,7 +422,8 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
 
         val lastPaidIdx = working.maxOfOrNull { if (it.paidOffIdx >= 0) it.paidOffIdx else monthIdx - 1 } ?: firstUpcomingIdx
         val accelMonths = max(1, (lastPaidIdx - firstUpcomingIdx) + 1)
-        val accelLabel = allMonths.getOrNull(lastPaidIdx)?.label ?: "Month ${lastPaidIdx + 1}"
+        val accelLabel = allMonths.getOrNull(lastPaidIdx)?.label
+            ?: DebtCatalog.slotFromKey(DebtCatalog.offsetMonthKey(allMonths.first().key, lastPaidIdx)).label
         val saved = max(0, baselineMonths - accelMonths)
 
         val order = working
@@ -434,8 +433,10 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
             )
             .map { acc ->
                 val lbl = when {
-                    acc.paidOffIdx < 0 -> "36+ mo"
-                    else -> allMonths.getOrNull(acc.paidOffIdx)?.label ?: "Month ${acc.paidOffIdx + 1}"
+                    acc.paidOffIdx < 0 -> "360+ mo"
+                    else -> allMonths.getOrNull(acc.paidOffIdx)?.label ?: DebtCatalog.slotFromKey(
+                        DebtCatalog.offsetMonthKey(allMonths.first().key, acc.paidOffIdx)
+                    ).label
                 }
                 SimulatedAccountResult(acc.platform, acc.originalLeft, acc.emisLeft, lbl, acc.paidOffIdx)
             }

@@ -12,6 +12,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +35,6 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.TableChart
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
@@ -82,6 +88,7 @@ import com.rohan.debtsync.ui.OverviewScreen
 import com.rohan.debtsync.ui.SecurityAndReminderDialog
 import com.rohan.debtsync.ui.SimulatorScreen
 import com.rohan.debtsync.ui.UpdateAvailableDialog
+import com.rohan.debtsync.ui.EmiGoConfirmDialog
 import com.rohan.debtsync.ui.theme.DebtSyncTheme
 import com.rohan.debtsync.ui.theme.GeminiBackground
 import com.rohan.debtsync.ui.theme.LocalDebtPalette
@@ -111,7 +118,6 @@ fun DebtSyncRoot(vm: DebtViewModel = viewModel()) {
         }
     }
 
-    // Re-lock automatically if app stays backgrounded > 20 seconds
     val lifecycleOwner = LocalLifecycleOwner.current
     var stoppedAtMs by remember { mutableLongStateOf(0L) }
     DisposableEffect(lifecycleOwner, vm.isAuthConfigured, vm.isUnlocked) {
@@ -250,19 +256,6 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Export CSV") },
-                                onClick = {
-                                    menuExpanded = false
-                                    val csv = vm.buildExportCsv()
-                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "EmiGo Export.csv")
-                                        putExtra(Intent.EXTRA_TEXT, csv)
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Export EmiGo CSV"))
-                                }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Lock App") },
                                 onClick = {
                                     menuExpanded = false
@@ -329,21 +322,31 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
         }
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
-            when (selectedTab) {
-                0 -> OverviewScreen(
-                    vm = vm,
-                    onAddLoan = {
-                        editingLoan = null
-                        showAddDialog = true
-                    },
-                    onEditLoan = { loan ->
-                        editingLoan = loan
-                        showAddDialog = true
-                    },
-                    onDeleteLoan = { loan -> loanToDelete = loan }
-                )
-                1 -> MatrixScreen(vm = vm)
-                2 -> SimulatorScreen(vm = vm)
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    (fadeIn(tween(240, easing = FastOutSlowInEasing)) +
+                        slideInVertically(tween(240, easing = FastOutSlowInEasing)) { it / 32 })
+                        .togetherWith(fadeOut(tween(150)))
+                },
+                label = "tabTransition"
+            ) { tab ->
+                when (tab) {
+                    0 -> OverviewScreen(
+                        vm = vm,
+                        onAddLoan = {
+                            editingLoan = null
+                            showAddDialog = true
+                        },
+                        onEditLoan = { loan ->
+                            editingLoan = loan
+                            showAddDialog = true
+                        },
+                        onDeleteLoan = { loan -> loanToDelete = loan }
+                    )
+                    1 -> MatrixScreen(vm = vm)
+                    2 -> SimulatorScreen(vm = vm)
+                }
             }
         }
     }
@@ -367,7 +370,6 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl)))
                 } catch (_: Exception) {
-                    // Ignored if no browser installed
                 }
             },
             onDismiss = { vm.dismissUpdateDialog() }
@@ -386,6 +388,7 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
     if (showAddDialog) {
         AddLoanDialog(
             existingLoan = editingLoan,
+            currency = vm.currency,
             onDismiss = { showAddDialog = false },
             onSave = { platform, dueDay, amounts ->
                 vm.saveLoan(editingLoan?.id, platform, dueDay, amounts)
@@ -395,40 +398,28 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
     }
 
     loanToDelete?.let { target ->
-        AlertDialog(
-            onDismissRequest = { loanToDelete = null },
-            title = { Text("Delete ${target.platform}?") },
-            text = { Text("This will remove the loan account and all of its scheduled EMIs.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.deleteLoan(target.id)
-                    loanToDelete = null
-                }) {
-                    Text("Delete", color = palette.danger)
-                }
+        EmiGoConfirmDialog(
+            title = "Delete ${target.platform}?",
+            message = "This will remove the loan account and all of its scheduled EMIs.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                vm.deleteLoan(target.id)
+                loanToDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { loanToDelete = null }) { Text("Cancel") }
-            }
+            onDismiss = { loanToDelete = null }
         )
     }
 
     if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text("Clear All Loan Data?") },
-            text = { Text("This removes all saved loan accounts and starts with an empty tracker.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.clearAllLoans()
-                    showClearConfirm = false
-                }) {
-                    Text("Clear All", color = palette.danger)
-                }
+        EmiGoConfirmDialog(
+            title = "Clear All Loan Data?",
+            message = "This removes all saved loan accounts and starts with an empty tracker.",
+            confirmLabel = "Clear All",
+            onConfirm = {
+                vm.clearAllLoans()
+                showClearConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
-            }
+            onDismiss = { showClearConfirm = false }
         )
     }
 }

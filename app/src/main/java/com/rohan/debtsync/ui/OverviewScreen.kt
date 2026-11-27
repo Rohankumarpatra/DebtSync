@@ -1,10 +1,15 @@
 package com.rohan.debtsync.ui
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +23,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +48,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,6 +71,8 @@ import com.rohan.debtsync.model.DebtCatalog
 import com.rohan.debtsync.model.LoanAccount
 import com.rohan.debtsync.model.PaymentStatus
 import com.rohan.debtsync.model.formatMoney
+import com.rohan.debtsync.ui.theme.GeminiCyan
+import com.rohan.debtsync.ui.theme.GeminiPurple
 import com.rohan.debtsync.ui.theme.LocalDebtPalette
 import java.util.Locale
 
@@ -79,7 +90,6 @@ fun OverviewScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // KPI Grid (2x2)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -121,17 +131,14 @@ fun OverviewScreen(
             }
         }
 
-        // Stacked Bar Chart Card
         item {
             MonthlyChartCard(loans = vm.loans, currency = vm.currency)
         }
 
-        // Monthly Checklist Card
         item {
             MonthlyChecklistCard(vm = vm)
         }
 
-        // Section Header
         item {
             Text(
                 text = "Loan Accounts (${vm.loans.size})",
@@ -141,7 +148,6 @@ fun OverviewScreen(
             )
         }
 
-        // Loan Account Cards or Empty State
         if (vm.loans.isEmpty()) {
             item {
                 Card(
@@ -227,6 +233,12 @@ private fun ProgressKpiCard(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalDebtPalette.current
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(650, easing = FastOutSlowInEasing),
+        label = "kpiProgress"
+    )
+
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -256,14 +268,14 @@ private fun ProgressKpiCard(
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                String.format(Locale.US, "%.1f%%", progress * 100f),
+                String.format(Locale.US, "%.1f%%", animatedProgress * 100f),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = palette.accent
             )
             Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
-                progress = { progress },
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -281,7 +293,7 @@ private fun MonthlyChartCard(loans: List<LoanAccount>, currency: CurrencyMode) {
     val allMonths = DebtCatalog.allMonthsFor(loans)
     val activeMonths = allMonths.filterIndexed { idx, m ->
         idx < 7 || loans.any { (it.payments[m.key]?.amount ?: 0.0) > 0.0 }
-    }.take(12)
+    }
 
     val paidList = activeMonths.map { m ->
         loans.sumOf { l ->
@@ -297,6 +309,17 @@ private fun MonthlyChartCard(loans: List<LoanAccount>, currency: CurrencyMode) {
     }
     val maxVal = activeMonths.indices.maxOfOrNull { paidList[it] + upcomingList[it] }?.coerceAtLeast(1.0) ?: 1.0
 
+    var chartVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { chartVisible = true }
+    val chartScale by animateFloatAsState(
+        targetValue = if (chartVisible) 1f else 0.05f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "chartReveal"
+    )
+
+    val needsHorizontalScroll = activeMonths.size > 7
+    val chartScrollState = rememberScrollState()
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = palette.cardBg),
@@ -311,7 +334,11 @@ private fun MonthlyChartCard(loans: List<LoanAccount>, currency: CurrencyMode) {
             ) {
                 Column {
                     Text("Monthly Settlement", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = palette.textPrimary)
-                    Text("Peak: ${formatMoney(maxVal, currency, compact = true)}", fontSize = 11.sp, color = palette.textSecondary)
+                    Text(
+                        "Peak: ${formatMoney(maxVal, currency, compact = true)} · ${activeMonths.size} mo",
+                        fontSize = 11.sp,
+                        color = palette.textSecondary
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     LegendDot("Paid", palette.success)
@@ -319,62 +346,82 @@ private fun MonthlyChartCard(loans: List<LoanAccount>, currency: CurrencyMode) {
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Canvas(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp)
-            ) {
-                val count = activeMonths.size.coerceAtLeast(1)
-                val slotW = size.width / count
-                val barW = (slotW * 0.56f).coerceAtMost(28.dp.toPx())
-                val radiusPx = 4.dp.toPx()
-                val chartH = size.height
 
-                val gridColor = palette.divider.copy(alpha = 0.6f)
-                listOf(0.25f, 0.5f, 0.75f).forEach { frac ->
-                    val y = chartH * frac
-                    drawLine(
-                        color = gridColor,
-                        start = Offset(0f, y),
-                        end = Offset(size.width, y),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-
-                for (i in 0 until count) {
-                    val paidH = ((paidList[i] / maxVal) * chartH).toFloat()
-                    val upH = ((upcomingList[i] / maxVal) * chartH).toFloat()
-                    val left = i * slotW + (slotW - barW) / 2f
-
-                    if (upH > 0f) {
-                        drawRoundRect(
-                            color = palette.accent,
-                            topLeft = Offset(left, chartH - paidH - upH),
-                            size = Size(barW, upH),
-                            cornerRadius = CornerRadius(radiusPx, radiusPx)
-                        )
-                    }
-                    if (paidH > 0f) {
-                        drawRoundRect(
-                            color = palette.success,
-                            topLeft = Offset(left, chartH - paidH),
-                            size = Size(barW, paidH),
-                            cornerRadius = CornerRadius(radiusPx, radiusPx)
-                        )
-                    }
-                }
+            val innerModifier = if (needsHorizontalScroll) {
+                Modifier.width((activeMonths.size * 46).dp)
+            } else {
+                Modifier.fillMaxWidth()
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                activeMonths.forEach { m ->
-                    Text(
-                        text = m.shortLabel,
-                        fontSize = 9.sp,
-                        color = palette.textSecondary,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
+
+            Column(
+                modifier = if (needsHorizontalScroll) {
+                    Modifier.fillMaxWidth().horizontalScroll(chartScrollState)
+                } else {
+                    Modifier.fillMaxWidth()
+                }
+            ) {
+                Canvas(
+                    modifier = innerModifier.height(150.dp)
+                ) {
+                    val count = activeMonths.size.coerceAtLeast(1)
+                    val slotW = size.width / count
+                    val barW = (slotW * 0.56f).coerceAtMost(28.dp.toPx())
+                    val radiusPx = 5.dp.toPx()
+                    val chartH = size.height
+
+                    val gridColor = palette.divider.copy(alpha = 0.55f)
+                    listOf(0.25f, 0.5f, 0.75f).forEach { frac ->
+                        val y = chartH * frac
+                        drawLine(
+                            color = gridColor,
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+
+                    val upcomingBrush = Brush.verticalGradient(
+                        colors = listOf(palette.accent, GeminiPurple)
                     )
+                    val paidBrush = Brush.verticalGradient(
+                        colors = listOf(GeminiCyan, palette.success)
+                    )
+
+                    for (i in 0 until count) {
+                        val paidH = ((paidList[i] / maxVal) * chartH * chartScale).toFloat()
+                        val upH = ((upcomingList[i] / maxVal) * chartH * chartScale).toFloat()
+                        val left = i * slotW + (slotW - barW) / 2f
+
+                        if (upH > 0f) {
+                            drawRoundRect(
+                                brush = upcomingBrush,
+                                topLeft = Offset(left, chartH - paidH - upH),
+                                size = Size(barW, upH),
+                                cornerRadius = CornerRadius(radiusPx, radiusPx)
+                            )
+                        }
+                        if (paidH > 0f) {
+                            drawRoundRect(
+                                brush = paidBrush,
+                                topLeft = Offset(left, chartH - paidH),
+                                size = Size(barW, paidH),
+                                cornerRadius = CornerRadius(radiusPx, radiusPx)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = innerModifier) {
+                    activeMonths.forEach { m ->
+                        Text(
+                            text = m.shortLabel,
+                            fontSize = 9.sp,
+                            color = palette.textSecondary,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
@@ -403,6 +450,7 @@ private fun MonthlyChecklistCard(vm: DebtViewModel) {
     val remaining = itemsForMonth.filter { it.second.status == PaymentStatus.UPCOMING }.sumOf { it.second.amount }
 
     Card(
+        modifier = Modifier.animateContentSize(tween(240, easing = FastOutSlowInEasing)),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = palette.cardBg),
         border = BorderStroke(1.dp, palette.cardBorder),
@@ -522,6 +570,11 @@ private fun LoanAccountCard(
 ) {
     val palette = LocalDebtPalette.current
     val activeMonths = DebtCatalog.allMonthsFor(listOf(loan)).filter { (loan.payments[it.key]?.amount ?: 0.0) > 0.0 }
+    val animatedLoanProgress by animateFloatAsState(
+        targetValue = loan.progressFraction,
+        animationSpec = tween(550, easing = FastOutSlowInEasing),
+        label = "loanProgress"
+    )
 
     val badgeBg = when {
         !loan.hasSchedule -> palette.subtleSurface
@@ -540,6 +593,7 @@ private fun LoanAccountCard(
     }
 
     Card(
+        modifier = Modifier.animateContentSize(tween(240, easing = FastOutSlowInEasing)),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = palette.cardBg),
         border = BorderStroke(1.dp, palette.cardBorder),
@@ -598,7 +652,7 @@ private fun LoanAccountCard(
             }
 
             LinearProgressIndicator(
-                progress = { loan.progressFraction },
+                progress = { animatedLoanProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)

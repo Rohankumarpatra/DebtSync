@@ -6,6 +6,7 @@ import com.rohan.debtsync.model.DebtCatalog
 import com.rohan.debtsync.model.LoanAccount
 import com.rohan.debtsync.model.MonthlyEmi
 import com.rohan.debtsync.model.PaymentStatus
+import com.rohan.debtsync.security.KeystoreCrypto
 import com.rohan.debtsync.security.TotpManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,7 +15,19 @@ class DebtRepository(context: Context) {
     private val prefs = context.getSharedPreferences("debt_sync_clean_prefs", Context.MODE_PRIVATE)
 
     fun loadLoans(): List<LoanAccount> {
-        val raw = prefs.getString("loans_json", null) ?: return DebtCatalog.initialLoans()
+        val encryptedRaw = prefs.getString("loans_json_enc", null)
+        val raw = if (encryptedRaw != null) {
+            KeystoreCrypto.decrypt(encryptedRaw) ?: return DebtCatalog.initialLoans()
+        } else {
+            // Migrate legacy plaintext loans_json if present from v2.1-v2.3
+            val legacy = prefs.getString("loans_json", null) ?: return DebtCatalog.initialLoans()
+            prefs.edit()
+                .putString("loans_json_enc", KeystoreCrypto.encrypt(legacy))
+                .remove("loans_json")
+                .apply()
+            legacy
+        }
+
         return try {
             val arr = JSONArray(raw)
             val list = mutableListOf<LoanAccount>()
@@ -66,7 +79,10 @@ class DebtRepository(context: Context) {
             }
             arr.put(obj)
         }
-        prefs.edit().putString("loans_json", arr.toString()).apply()
+        prefs.edit()
+            .putString("loans_json_enc", KeystoreCrypto.encrypt(arr.toString()))
+            .remove("loans_json")
+            .apply()
     }
 
     fun loadCurrency(): CurrencyMode {
@@ -95,6 +111,8 @@ class DebtRepository(context: Context) {
         prefs.edit()
             .putString("totp_secret_enc", encrypted)
             .putString("totp_recovery_hash", recoveryHash)
+            .putInt("auth_failed_attempts", 0)
+            .putLong("auth_lockout_until_ms", 0L)
             .apply()
     }
 
@@ -108,6 +126,33 @@ class DebtRepository(context: Context) {
         val normalized = input.replace("-", "").replace(" ", "").trim().uppercase()
         if (normalized.isEmpty()) return false
         return TotpManager.constantTimeEquals(storedHash, TotpManager.sha256(normalized))
+    }
+
+    // Brute-force / rate-limit tracking persisted across restarts
+    fun getAuthLockoutUntilMs(): Long = prefs.getLong("auth_lockout_until_ms", 0L)
+
+    fun getFailedAuthAttempts(): Int = prefs.getInt("auth_failed_attempts", 0)
+
+    fun recordFailedAuthAttempt(): Long {
+        val attempts = getFailedAuthAttempts() + 1
+        val cooldownMs = when {
+            attempts >= 10 -> 120_000L // 2 minutes after 10+ failed tries
+            attempts >= 5 -> 30_000L   // 30 seconds after 5+ failed tries
+            else -> 0L
+        }
+        val until = if (cooldownMs > 0L) System.currentTimeMillis() + cooldownMs else 0L
+        prefs.edit()
+            .putInt("auth_failed_attempts", attempts)
+            .putLong("auth_lockout_until_ms", until)
+            .apply()
+        return until
+    }
+
+    fun resetAuthFailures() {
+        prefs.edit()
+            .putInt("auth_failed_attempts", 0)
+            .putLong("auth_lockout_until_ms", 0L)
+            .apply()
     }
 
     fun isReminderEnabled(): Boolean = prefs.getBoolean("emi_reminder_enabled", true)

@@ -43,7 +43,8 @@ object UpdateChecker {
             }
 
             val notes = json.optString("body", "").ifBlank { "A new version of EmiGo is available." }
-            var downloadUrl = json.optString("html_url", "https://github.com/Rohankumarpatra/EmiGo/releases/latest")
+            val fallbackUrl = "https://github.com/Rohankumarpatra/EmiGo/releases/latest"
+            var downloadUrl = json.optString("html_url", fallbackUrl)
             val assets = json.optJSONArray("assets")
             if (assets != null) {
                 for (i in 0 until assets.length()) {
@@ -51,12 +52,15 @@ object UpdateChecker {
                     val name = asset.optString("name", "")
                     if (name.endsWith(".apk", ignoreCase = true)) {
                         val url = asset.optString("browser_download_url", "")
-                        if (url.isNotBlank()) {
+                        if (isTrustedHttpsUrl(url)) {
                             downloadUrl = url
                             break
                         }
                     }
                 }
+            }
+            if (!isTrustedHttpsUrl(downloadUrl)) {
+                downloadUrl = fallbackUrl
             }
 
             Result.success(
@@ -82,5 +86,16 @@ object UpdateChecker {
             if (l < c) return false
         }
         return false
+    }
+
+    private fun isTrustedHttpsUrl(rawUrl: String): Boolean {
+        return try {
+            val uri = URL(rawUrl)
+            uri.protocol.equals("https", ignoreCase = true) &&
+                (uri.host.equals("github.com", ignoreCase = true) ||
+                    uri.host.endsWith(".githubusercontent.com", ignoreCase = true))
+        } catch (_: Exception) {
+            false
+        }
     }
 }

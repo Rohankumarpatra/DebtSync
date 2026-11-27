@@ -2,9 +2,6 @@ package com.rohan.debtsync.security
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.google.zxing.BarcodeFormat
@@ -12,18 +9,12 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.URLEncoder
 import java.nio.ByteBuffer
-import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.Mac
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 object TotpManager {
-    private const val KEYSTORE_ALIAS = "debt_sync_totp_aes_key"
     private const val BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     private const val RECOVERY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     private const val STEP_SECONDS = 30L
@@ -127,60 +118,9 @@ object TotpManager {
         }
     }
 
-    fun encryptSecret(plain: String): String {
-        return try {
-            val key = getOrCreateKeystoreKey()
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, key)
-            val iv = cipher.iv
-            val encrypted = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
-            val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)
-            val dataB64 = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-            "KS1:$ivB64:$dataB64"
-        } catch (_: Exception) {
-            // Fallback encoding if keystore is unavailable on device
-            "B64:" + Base64.encodeToString(plain.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        }
-    }
+    fun encryptSecret(plain: String): String = KeystoreCrypto.encrypt(plain)
 
-    fun decryptSecret(stored: String): String? {
-        return try {
-            if (stored.startsWith("KS1:")) {
-                val parts = stored.split(":")
-                if (parts.size != 3) return null
-                val iv = Base64.decode(parts[1], Base64.NO_WRAP)
-                val data = Base64.decode(parts[2], Base64.NO_WRAP)
-                val key = getOrCreateKeystoreKey()
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
-                String(cipher.doFinal(data), Charsets.UTF_8)
-            } else if (stored.startsWith("B64:")) {
-                String(Base64.decode(stored.removePrefix("B64:"), Base64.NO_WRAP), Charsets.UTF_8)
-            } else {
-                null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun getOrCreateKeystoreKey(): SecretKey {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = ks.getKey(KEYSTORE_ALIAS, null) as? SecretKey
-        if (existing != null) return existing
-
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        val spec = KeyGenParameterSpec.Builder(
-            KEYSTORE_ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .build()
-        generator.init(spec)
-        return generator.generateKey()
-    }
+    fun decryptSecret(stored: String): String? = KeystoreCrypto.decrypt(stored)
 
     private fun encodeBase32(bytes: ByteArray): String {
         val out = StringBuilder()

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -96,6 +97,13 @@ import com.rohan.debtsync.ui.theme.LocalDebtPalette
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Block screenshots, screen recording, and recents preview thumbnails
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+        // Mitigate tapjacking from malicious screen overlays
+        window.decorView.filterTouchesWhenObscured = true
         enableEdgeToEdge()
         setContent {
             DebtSyncRoot()

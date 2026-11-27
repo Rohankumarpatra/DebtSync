@@ -340,6 +340,17 @@ private fun AuthenticatorLoginCard(
     var codeInput by remember { mutableStateOf("") }
     var useRecovery by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(vm.authLockoutUntilMs) {
+        while (vm.authLockoutUntilMs > System.currentTimeMillis()) {
+            nowMs = System.currentTimeMillis()
+            delay(500L)
+        }
+        nowMs = System.currentTimeMillis()
+    }
+    val lockoutRemainingSec = ((vm.authLockoutUntilMs - nowMs) / 1000L).coerceAtLeast(0L).toInt()
+    val isLockedOut = lockoutRemainingSec > 0
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -407,8 +418,18 @@ private fun AuthenticatorLoginCard(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            errorText?.let { msg ->
-                Text(msg, fontSize = 12.sp, color = palette.danger, textAlign = TextAlign.Center)
+            if (isLockedOut) {
+                Text(
+                    "Too many failed attempts. Try again in ${lockoutRemainingSec}s.",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.danger,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                errorText?.let { msg ->
+                    Text(msg, fontSize = 12.sp, color = palette.danger, textAlign = TextAlign.Center)
+                }
             }
 
             Button(
@@ -426,11 +447,11 @@ private fun AuthenticatorLoginCard(
                         }
                     }
                 },
-                enabled = if (useRecovery) codeInput.replace("-", "").length >= 8 else codeInput.length == 6,
+                enabled = !isLockedOut && if (useRecovery) codeInput.replace("-", "").length >= 8 else codeInput.length == 6,
                 colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Verify & Log In")
+                Text(if (isLockedOut) "Locked (${lockoutRemainingSec}s)" else "Verify & Log In")
             }
 
             TextButton(

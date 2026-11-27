@@ -60,6 +60,9 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     var isUnlocked by mutableStateOf(false)
         private set
 
+    var authLockoutUntilMs by mutableStateOf(repo.getAuthLockoutUntilMs())
+        private set
+
     var remindersEnabled by mutableStateOf(repo.isReminderEnabled())
         private set
 
@@ -125,14 +128,26 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun unlockWithTotp(code: String): Boolean {
+        if (System.currentTimeMillis() < authLockoutUntilMs) return false
         val secret = repo.loadTotpSecret() ?: return false
-        if (!TotpManager.verifyTotp(secret, code)) return false
+        if (!TotpManager.verifyTotp(secret, code)) {
+            authLockoutUntilMs = repo.recordFailedAuthAttempt()
+            return false
+        }
+        repo.resetAuthFailures()
+        authLockoutUntilMs = 0L
         onSuccessfulUnlock()
         return true
     }
 
     fun unlockWithRecoveryCode(code: String): Boolean {
-        if (!repo.verifyRecoveryCode(code)) return false
+        if (System.currentTimeMillis() < authLockoutUntilMs) return false
+        if (!repo.verifyRecoveryCode(code)) {
+            authLockoutUntilMs = repo.recordFailedAuthAttempt()
+            return false
+        }
+        repo.resetAuthFailures()
+        authLockoutUntilMs = 0L
         onSuccessfulUnlock()
         statusMessage = "Unlocked with recovery code"
         return true

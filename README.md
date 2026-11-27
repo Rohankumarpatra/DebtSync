@@ -5,7 +5,7 @@ A native Material 3 Android app (Kotlin + Jetpack Compose) for tracking personal
 ## Key Features
 - **Zero Pre-Loaded Data & Unlimited Months**: Starts empty so anyone can add loans of any length (3, 12, 24, 36, or 60+ months) from any start month.
 - **Smart Loan Builder**: Enter Monthly EMI + Months Count (or quick presets `3m/6m/12m/24m/36m`) with live total/date-range preview and optional per-month customization.
-- **TOTP Authenticator Sync**: Standard RFC 6238 6-digit authentication (compatible with Google Authenticator, Microsoft Authenticator, Authy, etc.) with QR code setup, manual Base32 key, Keystore-encrypted storage, and a one-time backup recovery code.
+- **TOTP Authenticator Sync & Security Hardening**: Standard RFC 6238 6-digit authentication with QR code setup, brute-force cooldown lockout, Android Keystore AES-256-GCM encrypted storage for both TOTP secrets and loan data, `FLAG_SECURE` screenshot/recents blocking, tapjacking protection, HTTPS-only network policy, `allowBackup="false"`, and R8 code shrinking/obfuscation.
 - **EMI Due-Date Reminders**: Automatic in-app pop-up reminder on login plus scheduled daily notifications before each loan's set due day (configurable 1–14 days ahead).
 - **Overview, Matrix & Simulator**: Smooth animated charts & progress bars, searchable/filterable EMI matrix, Snowball & Cashflow Relief payoff simulator, and `$` / `₹` currency toggle.
 - **Dark / Light Theme + Gemini Palette**: Soft Gemini aurora background and matching Gemini-styled popups with automatic system theme detection and manual toggle.

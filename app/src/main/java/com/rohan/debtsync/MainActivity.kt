@@ -82,12 +82,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rohan.debtsync.model.LoanAccount
 import com.rohan.debtsync.ui.AddLoanDialog
 import com.rohan.debtsync.ui.AuthGateScreen
+import com.rohan.debtsync.ui.CloudSyncDialog
 import com.rohan.debtsync.ui.DebtViewModel
 import com.rohan.debtsync.ui.EmiReminderPopupDialog
 import com.rohan.debtsync.ui.MatrixScreen
 import com.rohan.debtsync.ui.OverviewScreen
 import com.rohan.debtsync.ui.SecurityAndReminderDialog
 import com.rohan.debtsync.ui.SimulatorScreen
+import com.rohan.debtsync.ui.SmsSyncDialog
 import com.rohan.debtsync.ui.UpdateAvailableDialog
 import com.rohan.debtsync.ui.EmiGoConfirmDialog
 import com.rohan.debtsync.ui.theme.DebtSyncTheme
@@ -194,6 +196,24 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
     var loanToDelete by remember { mutableStateOf<LoanAccount?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSmsSyncDialog by remember { mutableStateOf(false) }
+    var showCloudSyncDialog by remember { mutableStateOf(false) }
+    var hasSmsPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val smsPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { grants ->
+            hasSmsPermission = grants[Manifest.permission.READ_SMS] == true
+            if (hasSmsPermission) {
+                vm.toggleSmsAutoSync(true)
+            }
+        }
+    )
 
     LaunchedEffect(vm.statusMessage) {
         vm.statusMessage?.let { msg ->
@@ -249,6 +269,21 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More options")
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("SMS Auto-Sync") },
+                                onClick = {
+                                    menuExpanded = false
+                                    if (hasSmsPermission) vm.scanSmsForEmis()
+                                    showSmsSyncDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Mobile Cloud Sync") },
+                                onClick = {
+                                    menuExpanded = false
+                                    showCloudSyncDialog = true
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Reminders & Security") },
                                 onClick = {
@@ -390,6 +425,27 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
             onReconfigureAuthenticator = { vm.beginAuthResync() },
             onLockNow = { vm.lockApp() },
             onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    if (showSmsSyncDialog) {
+        SmsSyncDialog(
+            vm = vm,
+            currency = vm.currency,
+            hasSmsPermission = hasSmsPermission,
+            onRequestSmsPermission = {
+                smsPermLauncher.launch(
+                    arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
+                )
+            },
+            onDismiss = { showSmsSyncDialog = false }
+        )
+    }
+
+    if (showCloudSyncDialog) {
+        CloudSyncDialog(
+            vm = vm,
+            onDismiss = { showCloudSyncDialog = false }
         )
     }
 

@@ -166,4 +166,16 @@ class DebtRepository(context: Context) {
     fun setReminderLeadDays(days: Int) {
         prefs.edit().putInt("emi_reminder_lead_days", days.coerceIn(1, 14)).apply()
     }
+
+    fun isSmsAutoSyncEnabled(): Boolean = prefs.getBoolean("sms_auto_sync_enabled", false)
+
+    fun setSmsAutoSyncEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("sms_auto_sync_enabled", enabled).apply()
+    }
+
+    fun getLastLocalUpdateMs(): Long = prefs.getLong("last_local_update_ms", 0L)
+
+    fun touchLocalUpdateMs(ts: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("last_local_update_ms", ts).apply()
+    }
 }

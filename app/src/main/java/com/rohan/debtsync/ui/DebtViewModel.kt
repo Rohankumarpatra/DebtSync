@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rohan.debtsync.BuildConfig
+import com.rohan.debtsync.cloud.CloudSyncManager
 import com.rohan.debtsync.data.DebtRepository
 import com.rohan.debtsync.model.CurrencyMode
 import com.rohan.debtsync.model.DebtCatalog
@@ -19,6 +20,8 @@ import com.rohan.debtsync.model.SimStrategy
 import com.rohan.debtsync.reminder.DueEmiReminder
 import com.rohan.debtsync.reminder.EmiReminderManager
 import com.rohan.debtsync.security.TotpManager
+import com.rohan.debtsync.sms.DetectedSmsEmi
+import com.rohan.debtsync.sms.SmsEmiParser
 import com.rohan.debtsync.update.AppUpdateInfo
 import com.rohan.debtsync.update.UpdateChecker
 import kotlinx.coroutines.launch
@@ -76,6 +79,15 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var availableUpdate by mutableStateOf<AppUpdateInfo?>(null)
+        private set
+
+    var smsAutoSyncEnabled by mutableStateOf(repo.isSmsAutoSyncEnabled())
+        private set
+
+    var detectedSmsEmis by mutableStateOf<List<DetectedSmsEmi>>(emptyList())
+        private set
+
+    var cloudPhoneNumber by mutableStateOf(CloudSyncManager.currentPhone(application.applicationContext))
         private set
 
     private var hasAutoCheckedUpdate = false
@@ -162,6 +174,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     fun lockApp() {
         isUnlocked = false
         showReminderPopup = false
+        CloudSyncManager.stopRealtimeSync()
     }
 
     private fun onSuccessfulUnlock() {
@@ -169,6 +182,109 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         refreshReminders(openPopupIfDue = true)
         EmiReminderManager.scheduleDailyReminder(getApplication())
         checkForUpdates(manual = false)
+        startCloudListenerIfSignedIn()
+    }
+
+    private fun persistLoansAndSync(updatedLoans: List<LoanAccount>) {
+        loans = updatedLoans
+        val now = System.currentTimeMillis()
+        repo.saveLoans(updatedLoans)
+        repo.touchLocalUpdateMs(now)
+        CloudSyncManager.pushState(getApplication(), updatedLoans, currency, now)
+    }
+
+    fun toggleSmsAutoSync(enabled: Boolean) {
+        smsAutoSyncEnabled = enabled
+        repo.setSmsAutoSyncEnabled(enabled)
+        if (enabled) scanSmsForEmis()
+    }
+
+    fun scanSmsForEmis() {
+        detectedSmsEmis = SmsEmiParser.scanInbox(getApplication(), loans)
+        if (detectedSmsEmis.isEmpty()) {
+            statusMessage = "No EMI SMS alerts found in the last 90 days"
+        }
+    }
+
+    fun applyDetectedSms(items: List<DetectedSmsEmi>) {
+        if (items.isEmpty()) return
+        val updated = loans.toMutableList()
+        var applied = 0
+
+        items.forEach { item ->
+            val targetIdx = when {
+                item.matchedLoanId != null -> updated.indexOfFirst { it.id == item.matchedLoanId }
+                else -> updated.indexOfFirst { it.platform.equals(item.platform, ignoreCase = true) }
+            }
+            if (targetIdx >= 0) {
+                val existing = updated[targetIdx]
+                val newMap = existing.payments.toMutableMap().apply {
+                    put(item.monthKey, MonthlyEmi(item.amount, item.status))
+                }
+                updated[targetIdx] = existing.copy(
+                    dueDay = existing.dueDay ?: item.dueDay,
+                    payments = newMap
+                )
+            } else {
+                updated.add(
+                    LoanAccount(
+                        id = "sms-${System.currentTimeMillis()}-$applied",
+                        platform = item.platform,
+                        dueDay = item.dueDay,
+                        payments = mapOf(item.monthKey to MonthlyEmi(item.amount, item.status))
+                    )
+                )
+            }
+            applied++
+        }
+
+        persistLoansAndSync(updated)
+        focusMonthKey = findInitialFocusMonth(updated)
+        refreshReminders(openPopupIfDue = false)
+        EmiReminderManager.scheduleDailyReminder(getApplication())
+        detectedSmsEmis = emptyList()
+        statusMessage = "Synced $applied EMI update(s) from SMS"
+    }
+
+    fun onCloudSignedIn(phone: String) {
+        cloudPhoneNumber = phone
+        startCloudListenerIfSignedIn()
+        pushCloudNow()
+        statusMessage = "Real-time sync active for $phone"
+    }
+
+    fun pushCloudNow() {
+        val ts = System.currentTimeMillis()
+        repo.touchLocalUpdateMs(ts)
+        CloudSyncManager.pushState(getApplication(), loans, currency, ts)
+    }
+
+    fun signOutCloud() {
+        CloudSyncManager.signOut(getApplication())
+        cloudPhoneNumber = null
+        statusMessage = "Signed out of mobile cloud sync"
+    }
+
+    private fun startCloudListenerIfSignedIn() {
+        val ctx = getApplication<Application>().applicationContext
+        cloudPhoneNumber = CloudSyncManager.currentPhone(ctx)
+        if (cloudPhoneNumber == null) return
+        CloudSyncManager.startRealtimeSync(
+            context = ctx,
+            onRemoteState = { remoteLoans, remoteCurrency, remoteUpdatedMs ->
+                if (remoteUpdatedMs > repo.getLastLocalUpdateMs()) {
+                    loans = remoteLoans
+                    repo.saveLoans(remoteLoans)
+                    repo.touchLocalUpdateMs(remoteUpdatedMs)
+                    if (remoteCurrency != null && remoteCurrency != currency) {
+                        currency = remoteCurrency
+                        repo.saveCurrency(remoteCurrency)
+                    }
+                    refreshReminders(openPopupIfDue = false)
+                }
+            },
+            onError = {}
+        )
     }
 
     fun checkForUpdates(manual: Boolean = false) {
@@ -238,6 +354,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleCurrency() {
         currency = if (currency == CurrencyMode.USD) CurrencyMode.INR else CurrencyMode.USD
         repo.saveCurrency(currency)
+        if (cloudPhoneNumber != null) pushCloudNow()
     }
 
     fun toggleTheme(currentlyDark: Boolean) {
@@ -249,7 +366,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePayment(loanId: String, monthKey: String) {
         var toastMsg: String? = null
         val allMonths = DebtCatalog.allMonthsFor(loans)
-        loans = loans.map { loan ->
+        val updatedLoans = loans.map { loan ->
             if (loan.id != loanId) {
                 loan
             } else {
@@ -268,7 +385,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
                 updated
             }
         }
-        repo.saveLoans(loans)
+        persistLoansAndSync(updatedLoans)
         refreshReminders(openPopupIfDue = false)
         EmiReminderManager.scheduleDailyReminder(getApplication())
         statusMessage = toastMsg
@@ -276,7 +393,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
 
     fun markFocusMonthPaid() {
         var count = 0
-        loans = loans.map { loan ->
+        val updatedLoans = loans.map { loan ->
             val emi = loan.payments[focusMonthKey]
             if (emi != null && emi.amount > 0 && emi.status == PaymentStatus.UPCOMING) {
                 count++
@@ -289,7 +406,7 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         if (count > 0) {
-            repo.saveLoans(loans)
+            persistLoansAndSync(updatedLoans)
             refreshReminders(openPopupIfDue = false)
             EmiReminderManager.scheduleDailyReminder(getApplication())
             val mLabel = DebtCatalog.allMonthsFor(loans).find { it.key == focusMonthKey }?.label ?: focusMonthKey
@@ -303,8 +420,9 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         val cleanName = platform.trim()
         if (cleanName.isEmpty()) return
 
-        if (existingId != null) {
-            loans = loans.map { loan ->
+        val updatedLoans = if (existingId != null) {
+            statusMessage = "Updated $cleanName"
+            loans.map { loan ->
                 if (loan.id != existingId) loan
                 else {
                     val newPayments = amounts.filterValues { it > 0 }.mapValues { (k, amt) ->
@@ -314,37 +432,35 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
                     loan.copy(platform = cleanName, dueDay = dueDay, payments = newPayments)
                 }
             }
-            statusMessage = "Updated $cleanName"
         } else {
             val newPayments = amounts.filterValues { it > 0 }.mapValues { (_, amt) ->
                 MonthlyEmi(amt, PaymentStatus.UPCOMING)
             }
-            loans = loans + LoanAccount(
+            val next = loans + LoanAccount(
                 id = "loan-${System.currentTimeMillis()}",
                 platform = cleanName,
                 dueDay = dueDay,
                 payments = newPayments
             )
-            focusMonthKey = findInitialFocusMonth(loans)
+            focusMonthKey = findInitialFocusMonth(next)
             statusMessage = "Added $cleanName"
+            next
         }
-        repo.saveLoans(loans)
+        persistLoansAndSync(updatedLoans)
         refreshReminders(openPopupIfDue = true)
         EmiReminderManager.scheduleDailyReminder(getApplication())
     }
 
     fun deleteLoan(loanId: String) {
         val target = loans.find { it.id == loanId } ?: return
-        loans = loans.filterNot { it.id == loanId }
-        repo.saveLoans(loans)
+        persistLoansAndSync(loans.filterNot { it.id == loanId })
         refreshReminders(openPopupIfDue = false)
         EmiReminderManager.scheduleDailyReminder(getApplication())
         statusMessage = "Deleted ${target.platform}"
     }
 
     fun clearAllLoans() {
-        loans = emptyList()
-        repo.saveLoans(loans)
+        persistLoansAndSync(emptyList())
         refreshReminders(openPopupIfDue = false)
         EmiReminderManager.scheduleDailyReminder(getApplication())
         statusMessage = "Cleared all loan accounts"

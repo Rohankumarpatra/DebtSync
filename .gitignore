@@ -10,3 +10,4 @@
 **/build/
 *.keystore
 *.jks
+google-services.json

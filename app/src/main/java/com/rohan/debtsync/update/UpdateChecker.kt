@@ -15,7 +15,7 @@ data class AppUpdateInfo(
 
 object UpdateChecker {
     private const val LATEST_RELEASE_API =
-        "https://api.github.com/repos/Rohankumarpatra/DebtSync/releases/latest"
+        "https://api.github.com/repos/Rohankumarpatra/EmiGo/releases/latest"
 
     suspend fun checkForUpdate(): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
         try {
@@ -24,7 +24,7 @@ object UpdateChecker {
                 connectTimeout = 8000
                 readTimeout = 8000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "DebtSync-Android/${BuildConfig.VERSION_NAME}")
+                setRequestProperty("User-Agent", "EmiGo-Android/${BuildConfig.VERSION_NAME}")
             }
             val code = conn.responseCode
             if (code == 404) {
@@ -42,8 +42,8 @@ object UpdateChecker {
                 return@withContext Result.success(null)
             }
 
-            val notes = json.optString("body", "").ifBlank { "A new version of Debt Sync is available." }
-            var downloadUrl = json.optString("html_url", "https://github.com/Rohankumarpatra/DebtSync/releases/latest")
+            val notes = json.optString("body", "").ifBlank { "A new version of EmiGo is available." }
+            var downloadUrl = json.optString("html_url", "https://github.com/Rohankumarpatra/EmiGo/releases/latest")
             val assets = json.optJSONArray("assets")
             if (assets != null) {
                 for (i in 0 until assets.length()) {

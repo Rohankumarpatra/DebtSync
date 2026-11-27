@@ -203,7 +203,7 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                             contentDescription = null,
                             modifier = Modifier.size(30.dp)
                         )
-                        Text("Debt Sync", fontWeight = FontWeight.Bold)
+                        Text("EmiGo", fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -256,10 +256,10 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                                     val csv = vm.buildExportCsv()
                                     val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "Debt Sync Export.csv")
+                                        putExtra(Intent.EXTRA_SUBJECT, "EmiGo Export.csv")
                                         putExtra(Intent.EXTRA_TEXT, csv)
                                     }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Export Debt Sync CSV"))
+                                    context.startActivity(Intent.createChooser(sendIntent, "Export EmiGo CSV"))
                                 }
                             )
                             DropdownMenuItem(

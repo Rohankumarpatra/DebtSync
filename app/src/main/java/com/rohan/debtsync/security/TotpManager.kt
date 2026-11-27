@@ -42,7 +42,7 @@ object TotpManager {
     fun buildOtpAuthUri(
         secretBase32: String,
         accountName: String = "Personal",
-        issuer: String = "Debt Sync"
+        issuer: String = "EmiGo"
     ): String {
         val encIssuer = URLEncoder.encode(issuer, "UTF-8").replace("+", "%20")
         val encAccount = URLEncoder.encode(accountName, "UTF-8").replace("+", "%20")

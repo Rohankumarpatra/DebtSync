@@ -105,7 +105,7 @@ fun AuthGateScreen(
                     modifier = Modifier.size(34.dp)
                 )
                 Column {
-                    Text("Debt Sync", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = palette.textPrimary)
+                    Text("EmiGo", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = palette.textPrimary)
                     Text("Authenticator Protected", fontSize = 11.sp, color = palette.textSecondary)
                 }
             }

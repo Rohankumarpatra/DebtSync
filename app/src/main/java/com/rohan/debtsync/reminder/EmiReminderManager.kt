@@ -147,7 +147,7 @@ object EmiReminderManager {
             "${due.size} Upcoming EMI Reminders"
         }
         val body = if (due.size == 1) {
-            "${first.urgencyLabel} (${first.dueDateLabel}). Open Debt Sync to review or mark paid."
+            "${first.urgencyLabel} (${first.dueDateLabel}). Open EmiGo to review or mark paid."
         } else {
             "Next: ${first.platform} (${first.urgencyLabel} on ${first.dueDateLabel}) and ${due.size - 1} more."
         }

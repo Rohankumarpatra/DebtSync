@@ -1,4 +1,4 @@
-# Debt Sync (Clean Edition)
+# EmiGo
 
 A native Material 3 Android app (Kotlin + Jetpack Compose) for tracking personal loan EMIs with **TOTP Authenticator Lock**, **Due-Date EMI Reminders**, **Payoff Simulator**, **In-App GitHub Release Update Checker**, and a **Gemini-themed Dark/Light UI**.
 
@@ -11,7 +11,7 @@ A native Material 3 Android app (Kotlin + Jetpack Compose) for tracking personal
 - **Direct In-App Updates**: Automatically checks GitHub Releases for newer signed APKs (and includes **Check for Updates** in the menu).
 
 ## Shipping Updates
-Every push to `main` or `v*` tag triggers [android-build.yml](.github/workflows/android-build.yml) to build a **release-signed APK** (`DebtSync_Clean.apk`) using the repository's release keystore secrets, and `v*` tags automatically publish a GitHub Release:
+Every push to `main` or `v*` tag triggers [android-build.yml](.github/workflows/android-build.yml) to build a **release-signed APK** (`EmiGo.apk`) using the repository's release keystore secrets, and `v*` tags automatically publish a GitHub Release:
 1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`.
-2. Commit and push to `main`, then create & push a tag (e.g., `git tag v2.2 && git push origin v2.2`).
-3. Existing users can tap **Download Update** in the app (or download `DebtSync_Clean.apk` from Releases) and update in-place without losing saved loans or Authenticator settings.
+2. Commit and push to `main`, then create & push a tag (e.g., `git tag v2.3 && git push origin v2.3`).
+3. Existing users can tap **Download Update** in the app (or download `EmiGo.apk` from Releases) and update in-place without losing saved loans or Authenticator settings.

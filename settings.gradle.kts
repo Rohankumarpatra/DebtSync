@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DebtSync"
+rootProject.name = "EmiGo"
 include(":app")

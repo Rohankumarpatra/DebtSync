@@ -1,7 +1,5 @@
 package com.rohan.debtsync.sms
 
-import android.content.Context
-import android.provider.Telephony
 import com.rohan.debtsync.model.LoanAccount
 import com.rohan.debtsync.model.PaymentStatus
 import java.text.SimpleDateFormat
@@ -74,67 +72,33 @@ object SmsEmiParser {
         "jul" to 7, "aug" to 8, "sep" to 9, "oct" to 10, "nov" to 11, "dec" to 12
     )
 
-    fun scanInbox(
-        context: Context,
-        existingLoans: List<LoanAccount>,
-        daysBack: Int = 90,
-        limit: Int = 250
+    fun parseBulkText(
+        rawText: String,
+        existingLoans: List<LoanAccount>
     ): List<DetectedSmsEmi> {
-        val cutoffMs = System.currentTimeMillis() - daysBack * 86_400_000L
+        val blocks = rawText
+            .split(Regex("\\n\\s*\\n+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        val now = System.currentTimeMillis()
         val results = mutableListOf<DetectedSmsEmi>()
-        val seenKeys = mutableSetOf<String>()
+        val seen = mutableSetOf<String>()
 
-        val projection = arrayOf(
-            Telephony.Sms._ID,
-            Telephony.Sms.ADDRESS,
-            Telephony.Sms.BODY,
-            Telephony.Sms.DATE
-        )
-        val selection = "${Telephony.Sms.DATE} >= ?"
-        val selectionArgs = arrayOf(cutoffMs.toString())
-        val sortOrder = "${Telephony.Sms.DATE} DESC"
+        blocks.forEachIndexed { idx, block ->
+            val parsed = parseSmsMessage(
+                id = "import-$now-$idx",
+                sender = "SMS Import",
+                body = block,
+                timestampMs = now,
+                existingLoans = existingLoans
+            ) ?: return@forEachIndexed
 
-        try {
-            context.contentResolver.query(
-                Telephony.Sms.Inbox.CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                sortOrder
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
-                val addrIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-                val bodyIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
-                val dateIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
-
-                var scanned = 0
-                while (cursor.moveToNext() && scanned < limit) {
-                    scanned++
-                    val smsId = cursor.getString(idIdx) ?: scanned.toString()
-                    val sender = cursor.getString(addrIdx) ?: "Bank/Lender"
-                    val body = cursor.getString(bodyIdx) ?: continue
-                    val ts = cursor.getLong(dateIdx)
-
-                    val parsed = parseSmsMessage(
-                        id = "sms-$smsId",
-                        sender = sender,
-                        body = body,
-                        timestampMs = ts,
-                        existingLoans = existingLoans
-                    ) ?: continue
-
-                    val dedupe = "${parsed.platform.lowercase()}|${parsed.monthKey}|${parsed.amount}|${parsed.status}"
-                    if (seenKeys.add(dedupe)) {
-                        results.add(parsed)
-                    }
-                }
+            val key = "${parsed.platform.lowercase()}|${parsed.monthKey}|${parsed.amount}|${parsed.status}"
+            if (seen.add(key)) {
+                results.add(parsed)
             }
-        } catch (_: SecurityException) {
-            return emptyList()
-        } catch (_: Exception) {
-            return emptyList()
         }
-
         return results
     }
 
@@ -154,13 +118,10 @@ object SmsEmiParser {
         val amount = extractAmount(body) ?: return null
         if (amount <= 0.0) return null
 
-        // If both appear ("your EMI due on 5th has been debited"), Paid wins
         val status = if (isPaid) PaymentStatus.PAID else PaymentStatus.UPCOMING
-
         val matchedLoan = findMatchingLoan(sender, body, existingLoans)
         val platform = matchedLoan?.platform ?: inferPlatformName(sender, body)
         val (monthKey, dueDay) = extractTargetMonthAndDay(body, timestampMs)
-
         val snippet = body.replace("\n", " ").replace(Regex("\\s+"), " ").trim().take(120)
 
         return DetectedSmsEmi(
@@ -204,12 +165,7 @@ object SmsEmiParser {
         KNOWN_LENDERS.forEach { (display, keywords) ->
             if (keywords.any { hay.contains(it) }) return display
         }
-        // Clean Indian DLT sender IDs like AD-HDFCBK or JD-MNYVW
-        val cleaned = sender.trim()
-            .replace(Regex("^[A-Za-z]{2}[-_]"), "")
-            .replace(Regex("[^A-Za-z0-9 ]"), "")
-            .trim()
-        return if (cleaned.length in 2..18) cleaned else "Loan EMI"
+        return "Loan EMI"
     }
 
     private fun extractTargetMonthAndDay(body: String, fallbackTs: Long): Pair<String, Int?> {

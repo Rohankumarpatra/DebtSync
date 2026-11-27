@@ -81,10 +81,13 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
     var availableUpdate by mutableStateOf<AppUpdateInfo?>(null)
         private set
 
-    var smsAutoSyncEnabled by mutableStateOf(repo.isSmsAutoSyncEnabled())
+    var detectedSmsEmis by mutableStateOf<List<DetectedSmsEmi>>(emptyList())
         private set
 
-    var detectedSmsEmis by mutableStateOf<List<DetectedSmsEmi>>(emptyList())
+    var pendingImportSmsText by mutableStateOf("")
+        private set
+
+    var showSmsImportPopup by mutableStateOf(false)
         private set
 
     var cloudPhoneNumber by mutableStateOf(CloudSyncManager.currentPhone(application.applicationContext))
@@ -183,6 +186,9 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         EmiReminderManager.scheduleDailyReminder(getApplication())
         checkForUpdates(manual = false)
         startCloudListenerIfSignedIn()
+        if (pendingImportSmsText.isNotBlank()) {
+            showSmsImportPopup = true
+        }
     }
 
     private fun persistLoansAndSync(updatedLoans: List<LoanAccount>) {
@@ -193,16 +199,31 @@ class DebtViewModel(application: Application) : AndroidViewModel(application) {
         CloudSyncManager.pushState(getApplication(), updatedLoans, currency, now)
     }
 
-    fun toggleSmsAutoSync(enabled: Boolean) {
-        smsAutoSyncEnabled = enabled
-        repo.setSmsAutoSyncEnabled(enabled)
-        if (enabled) scanSmsForEmis()
+    fun queueSharedSmsText(rawText: String) {
+        val cleaned = rawText.trim()
+        if (cleaned.isEmpty()) return
+        pendingImportSmsText = cleaned
+        detectedSmsEmis = SmsEmiParser.parseBulkText(cleaned, loans)
+        if (isUnlocked) {
+            showSmsImportPopup = true
+        }
     }
 
-    fun scanSmsForEmis() {
-        detectedSmsEmis = SmsEmiParser.scanInbox(getApplication(), loans)
+    fun openSmsImportDialog() {
+        showSmsImportPopup = true
+    }
+
+    fun dismissSmsImportDialog() {
+        showSmsImportPopup = false
+        pendingImportSmsText = ""
+        detectedSmsEmis = emptyList()
+    }
+
+    fun parsePastedSms(rawText: String) {
+        pendingImportSmsText = rawText
+        detectedSmsEmis = SmsEmiParser.parseBulkText(rawText, loans)
         if (detectedSmsEmis.isEmpty()) {
-            statusMessage = "No EMI SMS alerts found in the last 90 days"
+            statusMessage = "No EMI amount/status found in pasted text"
         }
     }
 

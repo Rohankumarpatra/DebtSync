@@ -22,7 +22,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,11 +50,10 @@ import com.rohan.debtsync.ui.theme.LocalDebtPalette
 fun SmsSyncDialog(
     vm: DebtViewModel,
     currency: CurrencyMode,
-    hasSmsPermission: Boolean,
-    onRequestSmsPermission: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = LocalDebtPalette.current
+    var rawText by remember(vm.pendingImportSmsText) { mutableStateOf(vm.pendingImportSmsText) }
     val detected = vm.detectedSmsEmis
     val selectedIds = remember(detected) {
         mutableStateMapOf<String, Boolean>().apply {
@@ -67,9 +65,9 @@ fun SmsSyncDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text("SMS Auto-Sync", fontWeight = FontWeight.Bold)
+                Text("Smart SMS Import", fontWeight = FontWeight.Bold)
                 Text(
-                    "Reads lender EMI alerts locally on your phone (never uploaded)",
+                    "Paste or Share any bank/lender EMI SMS (no SMS permission needed)",
                     fontSize = 11.sp,
                     color = palette.textSecondary
                 )
@@ -79,7 +77,7 @@ fun SmsSyncDialog(
             TextButton(onClick = onDismiss) {
                 Text("Close")
             }
-            if (hasSmsPermission && detected.isNotEmpty()) {
+            if (detected.isNotEmpty()) {
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
@@ -98,99 +96,73 @@ fun SmsSyncDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 420.dp)
+                .heightIn(max = 430.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (!hasSmsPermission) {
+            OutlinedTextField(
+                value = rawText,
+                onValueChange = { rawText = it },
+                label = { Text("Paste EMI SMS message(s)") },
+                placeholder = { Text("e.g. Your Moneyview EMI of Rs.3420 is paid / due on 05-Dec") },
+                minLines = 3,
+                maxLines = 5,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedButton(
+                onClick = { vm.parsePastedSms(rawText) },
+                enabled = rawText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Detect EMIs from Text")
+            }
+
+            if (detected.isNotEmpty()) {
+                HorizontalDivider(color = palette.divider)
                 Text(
-                    "Grant SMS permission so EmiGo can scan lender EMI messages and auto-update Paid/Due statuses in real time.",
+                    "Detected EMI Updates (${detected.size})",
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
                     color = palette.textSecondary
                 )
-                Button(
-                    onClick = onRequestSmsPermission,
-                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Allow SMS Access")
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                        Text("Live Background SMS Sync", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = palette.textPrimary)
-                        Text("Auto-update when new EMI SMS arrives", fontSize = 11.sp, color = palette.textSecondary)
-                    }
-                    Switch(
-                        checked = vm.smsAutoSyncEnabled,
-                        onCheckedChange = { vm.toggleSmsAutoSync(it) }
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = { vm.scanSmsForEmis() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Scan Last 90 Days SMS")
-                }
-
-                HorizontalDivider(color = palette.divider)
-
-                if (detected.isEmpty()) {
-                    Text(
-                        "No EMI SMS alerts detected yet. Tap \"Scan Last 90 Days SMS\" to check your inbox.",
-                        fontSize = 12.sp,
-                        color = palette.textSecondary
-                    )
-                } else {
-                    Text(
-                        "Detected EMI Messages (${detected.size})",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        color = palette.textSecondary
-                    )
-                    detected.forEach { item: DetectedSmsEmi ->
-                        val checked = selectedIds[item.id] == true
-                        val isPaid = item.status == PaymentStatus.PAID
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isPaid) palette.successBg else palette.subtleSurface)
-                                .border(1.dp, palette.cardBorder, RoundedCornerShape(12.dp))
-                                .clickable { selectedIds[item.id] = !checked }
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = { selectedIds[item.id] = it }
+                detected.forEach { item: DetectedSmsEmi ->
+                    val checked = selectedIds[item.id] == true
+                    val isPaid = item.status == PaymentStatus.PAID
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isPaid) palette.successBg else palette.subtleSurface)
+                            .border(1.dp, palette.cardBorder, RoundedCornerShape(12.dp))
+                            .clickable { selectedIds[item.id] = !checked }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = { selectedIds[item.id] = it }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${item.platform} · ${formatMoney(item.amount, currency)}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = palette.textPrimary
                             )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "${item.platform} · ${formatMoney(item.amount, currency)}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = palette.textPrimary
-                                )
-                                Text(
-                                    "${item.monthKey} · ${if (isPaid) "Paid" else "Upcoming"}" +
-                                        (item.dueDay?.let { " · Day $it" } ?: ""),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isPaid) palette.success else palette.warning
-                                )
-                                Text(
-                                    item.snippet,
-                                    fontSize = 10.sp,
-                                    color = palette.textSecondary,
-                                    maxLines = 2
-                                )
-                            }
+                            Text(
+                                "${item.monthKey} · ${if (isPaid) "Paid" else "Upcoming"}" +
+                                    (item.dueDay?.let { " · Day $it" } ?: ""),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isPaid) palette.success else palette.warning
+                            )
+                            Text(
+                                item.snippet,
+                                fontSize = 10.sp,
+                                color = palette.textSecondary,
+                                maxLines = 2
+                            )
                         }
                     }
                 }
@@ -254,7 +226,7 @@ fun CloudSyncDialog(
                         color = palette.warning
                     )
                     Text(
-                        "To activate live SMS OTP login & real-time cloud sync across devices, add your google-services.json from Firebase Console into app/ and rebuild.",
+                        "Add google-services.json from Firebase Console into app/ and rebuild.",
                         fontSize = 12.sp,
                         color = palette.textPrimary
                     )

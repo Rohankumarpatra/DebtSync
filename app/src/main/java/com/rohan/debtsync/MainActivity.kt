@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -78,12 +79,12 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rohan.debtsync.model.LoanAccount
 import com.rohan.debtsync.ui.AddLoanDialog
 import com.rohan.debtsync.ui.AuthGateScreen
 import com.rohan.debtsync.ui.CloudSyncDialog
 import com.rohan.debtsync.ui.DebtViewModel
+import com.rohan.debtsync.ui.EmiGoConfirmDialog
 import com.rohan.debtsync.ui.EmiReminderPopupDialog
 import com.rohan.debtsync.ui.MatrixScreen
 import com.rohan.debtsync.ui.OverviewScreen
@@ -91,30 +92,44 @@ import com.rohan.debtsync.ui.SecurityAndReminderDialog
 import com.rohan.debtsync.ui.SimulatorScreen
 import com.rohan.debtsync.ui.SmsSyncDialog
 import com.rohan.debtsync.ui.UpdateAvailableDialog
-import com.rohan.debtsync.ui.EmiGoConfirmDialog
 import com.rohan.debtsync.ui.theme.DebtSyncTheme
 import com.rohan.debtsync.ui.theme.GeminiBackground
 import com.rohan.debtsync.ui.theme.LocalDebtPalette
 
 class MainActivity : ComponentActivity() {
+    private val vm: DebtViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Block screenshots, screen recording, and recents preview thumbnails
         window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
         )
-        // Mitigate tapjacking from malicious screen overlays
         window.decorView.filterTouchesWhenObscured = true
+        handleIncomingIntent(intent)
         enableEdgeToEdge()
         setContent {
-            DebtSyncRoot()
+            DebtSyncRoot(vm = vm)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val shared = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!shared.isNullOrBlank()) {
+                vm.queueSharedSmsText(shared)
+            }
         }
     }
 }
 
 @Composable
-fun DebtSyncRoot(vm: DebtViewModel = viewModel()) {
+fun DebtSyncRoot(vm: DebtViewModel) {
     val isDark = vm.darkThemeOverride ?: isSystemInDarkTheme()
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -196,24 +211,7 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
     var loanToDelete by remember { mutableStateOf<LoanAccount?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
-    var showSmsSyncDialog by remember { mutableStateOf(false) }
     var showCloudSyncDialog by remember { mutableStateOf(false) }
-    var hasSmsPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
-                PackageManager.PERMISSION_GRANTED
-        )
-    }
-
-    val smsPermLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-        onResult = { grants ->
-            hasSmsPermission = grants[Manifest.permission.READ_SMS] == true
-            if (hasSmsPermission) {
-                vm.toggleSmsAutoSync(true)
-            }
-        }
-    )
 
     LaunchedEffect(vm.statusMessage) {
         vm.statusMessage?.let { msg ->
@@ -270,11 +268,10 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
-                                text = { Text("SMS Auto-Sync") },
+                                text = { Text("Smart SMS Import") },
                                 onClick = {
                                     menuExpanded = false
-                                    if (hasSmsPermission) vm.scanSmsForEmis()
-                                    showSmsSyncDialog = true
+                                    vm.openSmsImportDialog()
                                 }
                             )
                             DropdownMenuItem(
@@ -428,17 +425,11 @@ fun DebtSyncApp(vm: DebtViewModel, isDark: Boolean) {
         )
     }
 
-    if (showSmsSyncDialog) {
+    if (vm.showSmsImportPopup) {
         SmsSyncDialog(
             vm = vm,
             currency = vm.currency,
-            hasSmsPermission = hasSmsPermission,
-            onRequestSmsPermission = {
-                smsPermLauncher.launch(
-                    arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
-                )
-            },
-            onDismiss = { showSmsSyncDialog = false }
+            onDismiss = { vm.dismissSmsImportDialog() }
         )
     }
 

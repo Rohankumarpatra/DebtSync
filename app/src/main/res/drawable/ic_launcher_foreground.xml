@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Debt Ledger Card (white rounded sheet) -->
+    <path
+        android:pathData="M34,29 L64,29 C67.3,29 70,31.7 70,35 L70,71 C70,74.3 67.3,77 64,77 L34,77 C30.7,77 28,74.3 28,71 L28,35 C28,31.7 30.7,29 34,29 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Top indigo header bar inside ledger -->
+    <path
+        android:pathData="M35,36 L63,36 C64.1,36 65,36.9 65,38 C65,39.1 64.1,40 63,40 L35,40 C33.9,40 33,39.1 33,38 C33,36.9 33.9,36 35,36 Z"
+        android:fillColor="#4F46E5" />
+
+    <!-- Shrinking debt lines (visualizing debt going down to zero) -->
+    <path
+        android:pathData="M35,46 L59,46 C60.1,46 61,46.9 61,48 C61,49.1 60.1,50 59,50 L35,50 C33.9,50 33,49.1 33,48 C33,46.9 33.9,46 35,46 Z"
+        android:fillColor="#94A3B8" />
+    <path
+        android:pathData="M35,55 L51,55 C52.1,55 53,55.9 53,57 C53,58.1 52.1,59 51,59 L35,59 C33.9,59 33,58.1 33,57 C33,55.9 33.9,55 35,55 Z"
+        android:fillColor="#CBD5E1" />
+    <path
+        android:pathData="M35,64 L43,64 C44.1,64 45,64.9 45,66 C45,67.1 44.1,68 43,68 L35,68 C33.9,68 33,67.1 33,66 C33,64.9 33.9,64 35,64 Z"
+        android:fillColor="#34D399" />
+
+    <!-- White halo around Cleared badge -->
+    <path
+        android:pathData="M67,65m-16.5,0a16.5,16.5 0,1 1,33 0a16.5,16.5 0,1 1,-33 0"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Emerald Cleared badge circle -->
+    <path
+        android:pathData="M67,65m-13.5,0a13.5,13.5 0,1 1,27 0a13.5,13.5 0,1 1,-27 0"
+        android:fillColor="#10B981" />
+
+    <!-- Crisp white Checkmark inside Cleared badge -->
+    <path
+        android:pathData="M60.5,65.2 L65,69.7 L74,60.3"
+        android:strokeWidth="3.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Gemini 4-point sparkle at top-right -->
+    <path
+        android:pathData="M75,26 Q75,32 81,32 Q75,32 75,38 Q75,32 69,32 Q75,32 75,26 Z"
+        android:fillColor="#FDE68A" />
+</vector>
